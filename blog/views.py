@@ -5,6 +5,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from .models import Post, Comment
 from .serializers import PostSerializer, CommentSerializer
+from django.db.models import Q
 
 # Create Post
 @api_view(["POST"])
@@ -58,16 +59,91 @@ def delete_post(request, pk):
     except Post.DoesNotExist:
         return Response({"message": "Post not found"}, status=status.HTTP_404_NOT_FOUND)
 
-# Create Comment
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_comment(request, post_id):
-    post = Post.objects.get(pk=post_id)
-    serializer = CommentSerializer(data=request.data)
-    if serializer.is_valid():
+   try:
+      post = Post.objects.get(pk=post_id)
+      serializer = CommentSerializer(data=request.data)
+      if serializer.is_valid():
         serializer.save(post=post, author=request.user)
         return Response({"message": "Comment created", "data": serializer.data}, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+   except:
+    return Response({"message":"Comment not found"},serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def read_comment(request, comment_id):
+    try:
+        comment = Comment.objects.get(pk=comment_id)
+        serializer = CommentSerializer(comment)
+        return Response({"message": "Comment retrieved", "data": serializer.data}, status=status.HTTP_200_OK)
+    except Comment.DoesNotExist:
+        return Response({"message": "Comment not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"message": "Error retrieving comment", "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+    
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def update_comment(request, comment_id):
+    try:
+        comment = Comment.objects.get(pk=comment_id)
+    except Comment.DoesNotExist:
+        return Response({"message": "Comment not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"message": "Error retrieving comment", "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if comment.author != request.user:
+        return Response({"message": "You are not authorized to update this comment."}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = CommentSerializer(comment, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save() 
+        return Response({"message": "Comment updated", "data": serializer.data}, status=status.HTTP_200_OK)
+    else:
+        return Response({"message": "Update failed", "errors": serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_comment(request, comment_id):
+    try:
+        comment = Comment.objects.get(pk=comment_id)
+    except Comment.DoesNotExist:
+        return Response({"message": "Comment not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"message": "Error retrieving comment", "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    if comment.author != request.user:
+        return Response({"message": "You are not authorized to delete this comment."}, status=status.HTTP_403_FORBIDDEN)
+
+    comment.delete()
+    return Response({"message": "Comment deleted"}, status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def list_comments(request):
+    try:
+        comments = Comment.objects.all()
+
+        search_query = request.query_params.get("search", None)
+        if search_query:
+            comments = comments.filter(Q(text__icontains=search_query))
+
+        post_id = request.query_params.get("post", None)
+        if post_id:
+            comments = comments.filter(post__id=post_id)
+
+        serializer = CommentSerializer(comments, many=True)
+        return Response({"message": "Comments retrieved", "data": serializer.data}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"message": "Error retrieving comments", "error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
 
 
